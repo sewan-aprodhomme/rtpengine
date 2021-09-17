@@ -3066,6 +3066,12 @@ static int __codec_options_set1(struct call *call, struct rtp_payload_type *pt, 
 		pt->codec_opts = pt_parsed->codec_opts;
 		pt_parsed->codec_opts = STR_NULL;
 	}
+	if (pt_parsed->format_parameters.len) {
+		// override fmtp
+		str_free_dup(&pt->format_parameters);
+		pt->format_parameters = pt_parsed->format_parameters;
+		pt_parsed->format_parameters = STR_NULL;
+	}
 	payload_type_free(pt_parsed);
 	return 1;
 }
