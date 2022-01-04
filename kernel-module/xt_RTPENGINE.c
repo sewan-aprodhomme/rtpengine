@@ -21,6 +21,7 @@
 #include <net/ipv6.h>
 #include <net/tcp.h>
 #include <net/route.h>
+#include <net/ip6_route.h>
 #include <net/dst.h>
 #include <linux/proc_fs.h>
 #include <linux/spinlock.h>
@@ -3578,12 +3579,15 @@ static ssize_t proc_control_read(struct file *file, char __user *ubuf, size_t bu
 
 
 
+// par can be NULL
 static int send_proxy_packet4(struct sk_buff *skb, struct re_address *src, struct re_address *dst,
 		unsigned char tos, const struct xt_action_param *par)
 {
 	struct iphdr *ih;
 	struct udphdr *uh;
 	unsigned int datalen;
+	struct net *net;
+	struct rtable *rt;
 
 	datalen = skb->len;
 
@@ -3616,37 +3620,38 @@ static int send_proxy_packet4(struct sk_buff *skb, struct re_address *src, struc
 	uh->check = csum_tcpudp_magic(src->u.ipv4, dst->u.ipv4, datalen, IPPROTO_UDP, csum_partial(uh, datalen, 0));
 	if (uh->check == 0)
 		uh->check = CSUM_MANGLED_0;
-
 	skb->protocol = htons(ETH_P_IP);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,9) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,78) && LINUX_VERSION_CODE < KERNEL_VERSION(5,5,0)) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,158) && LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0))
-	if (ip_route_me_harder(par->state->net, par->state->sk, skb, RTN_UNSPEC))
-#elif defined(RHEL_RELEASE_CODE) && LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) && \
-		RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4)
-	if (ip_route_me_harder(par->state->net, par->state->sk, skb, RTN_UNSPEC))
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	if (ip_route_me_harder(par->state->net, skb, RTN_UNSPEC))
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	if (ip_route_me_harder(par->net, skb, RTN_UNSPEC))
+
+	net = NULL;
+	if (par)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+		net = par->state->net;
 #else
-	if (ip_route_me_harder(skb, RTN_UNSPEC))
+		net = par->net;
 #endif
+	if (!net && current && current->nsproxy)
+		net = current->nsproxy->net_ns;
+	if (!net)
+		goto drop;
+
+	rt = ip_route_output(net, dst->u.ipv4, src->u.ipv4, tos, 0);
+	if (IS_ERR(rt))
+		goto drop;
+	skb_dst_drop(skb);
+	skb_dst_set(skb, &rt->dst);
+
+	if (skb_dst(skb)->error)
 		goto drop;
 
 	skb->ip_summed = CHECKSUM_NONE;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	ip_select_ident(par->state->net, skb, NULL);
+	ip_select_ident(net, skb, NULL);
 	ip_send_check(ih);
-	ip_local_out(par->state->net, skb->sk, skb);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip_select_ident(par->net, skb, NULL);
-	ip_send_check(ih);
-	ip_local_out(par->net, skb->sk, skb);
+	ip_local_out(net, skb->sk, skb);
 #else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0)
-	ip_select_ident(par->net, skb, NULL);
+	ip_select_ident(net, skb, NULL);
 #elif (LINUX_VERSION_CODE == KERNEL_VERSION(3,10,0) && RHEL_MAJOR == 7) /* CentOS 7 */
 	/* nothing */
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,10) \
@@ -3681,12 +3686,16 @@ drop:
 
 
 
+// par can be NULL
 static int send_proxy_packet6(struct sk_buff *skb, struct re_address *src, struct re_address *dst,
 		unsigned char tos, const struct xt_action_param *par)
 {
 	struct ipv6hdr *ih;
 	struct udphdr *uh;
 	unsigned int datalen;
+	struct net *net;
+	struct dst_entry *dst_entry;
+	struct flowi6 fl6;
 
 	datalen = skb->len;
 
@@ -3719,30 +3728,39 @@ static int send_proxy_packet6(struct sk_buff *skb, struct re_address *src, struc
 	uh->check = csum_ipv6_magic(&ih->saddr, &ih->daddr, datalen, IPPROTO_UDP, csum_partial(uh, datalen, 0));
 	if (uh->check == 0)
 		uh->check = CSUM_MANGLED_0;
-
 	skb->protocol = htons(ETH_P_IPV6);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,9) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,78) && LINUX_VERSION_CODE < KERNEL_VERSION(5,5,0)) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,158) && LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0))
-	if (ip6_route_me_harder(par->state->net, par->state->sk, skb))
-#elif defined(RHEL_RELEASE_CODE) && LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) && \
-		RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4)
-	if (ip6_route_me_harder(par->state->net, par->state->sk, skb))
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	if (ip6_route_me_harder(par->state->net, skb))
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	if (ip6_route_me_harder(par->net, skb))
+
+	net = NULL;
+	if (par)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+		net = par->state->net;
 #else
-	if (ip6_route_me_harder(skb))
+		net = par->net;
 #endif
+	if (!net && current && current->nsproxy)
+		net = current->nsproxy->net_ns;
+	if (!net)
 		goto drop;
+
+	memset(&fl6, 0, sizeof(fl6));
+	memcpy(&fl6.saddr, src->u.ipv6, sizeof(fl6.saddr));
+	memcpy(&fl6.daddr, dst->u.ipv6, sizeof(fl6.daddr));
+	fl6.flowi6_mark = skb->mark;
+
+	dst_entry = ip6_route_output(net, NULL, &fl6);
+	if (!dst_entry)
+		goto drop;
+	if (dst_entry->error) {
+		dst_release(dst_entry);
+		goto drop;
+	}
+	skb_dst_drop(skb);
+	skb_dst_set(skb, dst_entry);
 
 	skb->ip_summed = CHECKSUM_NONE;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	ip6_local_out(par->state->net, skb->sk, skb);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip6_local_out(par->net, skb->sk, skb);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	ip6_local_out(net, skb->sk, skb);
 #else
 	ip6_local_out(skb);
 #endif
@@ -4333,6 +4351,29 @@ static struct sk_buff *intercept_skb_copy(struct sk_buff *oskb, const struct re_
 	return ret;
 }
 
+static int send_proxy_packet_output(struct sk_buff *skb, struct rtpengine_target *g,
+		struct rtpengine_output *o, struct rtp_parsed *rtp, int ssrc_idx,
+		const struct xt_action_param *par)
+{
+	if (rtp->ok) {
+		unsigned int pllen;
+		uint64_t pkt_idx;
+
+		// SSRC substitution
+		if (g->target.transcoding && o->output.ssrc_out && ssrc_idx != -1)
+			rtp->header->ssrc = o->output.ssrc_out[ssrc_idx];
+
+		// SRTP
+		pkt_idx = packet_index(&o->encrypt, &o->output.encrypt, rtp->header, ssrc_idx);
+		pllen = rtp->payload_len;
+		srtp_encrypt(&o->encrypt, &o->output.encrypt, rtp, pkt_idx);
+		srtp_authenticate(&o->encrypt, &o->output.encrypt, rtp, pkt_idx);
+		skb_put(skb, rtp->payload_len - pllen);
+	}
+
+	return send_proxy_packet(skb, &o->output.src_addr, &o->output.dst_addr, o->output.tos, par);
+}
+
 
 
 
@@ -4434,7 +4475,7 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 	int error_nf_action = XT_CONTINUE;
 	int rtp_pt_idx = -2;
 	int ssrc_idx = -1;
-	unsigned int datalen, pllen;
+	unsigned int datalen;
 	struct rtp_parsed rtp, rtp2;
 	ssize_t offset;
 	uint64_t pkt_idx;
@@ -4603,19 +4644,7 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 		rtp2.header = (void *) (((char *) rtp2.header) + offset);
 		rtp2.payload = (void *) (((char *) rtp2.payload) + offset);
 
-		if (rtp2.ok) {
-			// SSRC substitution
-			if (g->target.transcoding && o->output.ssrc_out && ssrc_idx != -1)
-				rtp2.header->ssrc = o->output.ssrc_out[ssrc_idx];
-
-			pkt_idx = packet_index(&o->encrypt, &o->output.encrypt, rtp2.header, ssrc_idx);
-			pllen = rtp2.payload_len;
-			srtp_encrypt(&o->encrypt, &o->output.encrypt, &rtp2, pkt_idx);
-			srtp_authenticate(&o->encrypt, &o->output.encrypt, &rtp2, pkt_idx);
-			skb_put(skb2, rtp2.payload_len - pllen);
-		}
-
-		err = send_proxy_packet(skb2, &o->output.src_addr, &o->output.dst_addr, o->output.tos, par);
+		err = send_proxy_packet_output(skb2, g, o, &rtp2, ssrc_idx, par);
 		if (err)
 			atomic64_inc(&g->stats.errors);
 	}
