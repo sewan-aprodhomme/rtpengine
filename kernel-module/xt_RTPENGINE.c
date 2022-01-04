@@ -175,6 +175,7 @@ struct re_call;
 struct re_stream;
 struct rtpengine_table;
 struct crypto_aead;
+struct rtpengine_output;
 
 
 
@@ -265,6 +266,10 @@ static int srtp_decrypt_aes_gcm(struct re_crypto_context *, struct rtpengine_srt
 		struct rtp_parsed *, uint64_t);
 static int srtcp_decrypt_aes_gcm(struct re_crypto_context *, struct rtpengine_srtp *,
 		struct rtp_parsed *, uint64_t);
+
+static int send_proxy_packet_output(struct sk_buff *skb, struct rtpengine_target *g,
+		struct rtpengine_output *o, struct rtp_parsed *rtp, int ssrc_idx,
+		const struct xt_action_param *par);
 
 static void call_put(struct re_call *call);
 static void del_stream(struct re_stream *stream, struct rtpengine_table *);
@@ -481,6 +486,7 @@ struct rtp_parsed {
 	unsigned char			*payload;
 	unsigned int			payload_len;
 	int				ok;
+	int				rtcp;
 };
 
 
@@ -3444,7 +3450,7 @@ err:
 }
 
 static int stream_packet(struct rtpengine_table *t, const struct rtpengine_packet_info *info,
-		const unsigned char *data, unsigned int len)
+		const unsigned char *data, size_t len)
 {
 	struct re_stream *stream;
 	int err;
@@ -3499,6 +3505,74 @@ static int target_find_ssrc(struct rtpengine_target *g, uint32_t ssrc) {
 			return ssrc_idx;
 	}
 	return -2;
+}
+
+static int table_send_rtcp(struct rtpengine_table *t, const struct rtpengine_send_packet_info *info,
+		const unsigned char *data, size_t len)
+{
+	struct rtpengine_target *g;
+	int err = 0;
+	unsigned long flags;
+	struct rtpengine_output *o;
+	struct sk_buff *skb;
+	struct rtp_parsed rtp;
+	int ssrc_idx = -1;
+
+	g = get_target(t, &info->local);
+	if (!g)
+		return -ENOENT;
+
+	err = -ERANGE;
+	if (info->destination_idx >= g->target.num_destinations)
+		goto out;
+
+	_r_lock(&g->outputs_lock, flags);
+	if (g->outputs_unfilled) {
+		_r_unlock(&g->outputs_lock, flags);
+		err = -ENODATA;
+		goto out;
+	}
+
+	o = &g->outputs[info->destination_idx];
+	_r_unlock(&g->outputs_lock, flags);
+
+	// double check addresses for confirmation
+	err = -EBADSLT;
+	if (memcmp(&info->src_addr, &o->output.src_addr, sizeof(o->output.src_addr)))
+		goto out;
+	if (memcmp(&info->dst_addr, &o->output.dst_addr, sizeof(o->output.dst_addr)))
+		goto out;
+
+	err = -ENOMEM;
+	skb = alloc_skb(len + MAX_HEADER + MAX_SKB_TAIL_ROOM, GFP_KERNEL);
+	if (!skb)
+		goto out;
+
+	// reserve head room and copy data in
+	skb_reserve(skb, MAX_HEADER);
+	memcpy(skb_put(skb, len), data, len);
+
+	// rudimentarily set up header
+	memset(&rtp, 0, sizeof(rtp));
+	if (len >= sizeof(struct rtcp_header)) {
+		rtp.rtcp_header = (void *) skb->data;
+		rtp.header_len = sizeof(struct rtcp_header);
+		rtp.payload = skb->data + sizeof(struct rtcp_header);
+		rtp.payload_len = skb->len - sizeof(struct rtcp_header);
+		rtp.rtcp = 1;
+		ssrc_idx = target_find_ssrc(g, rtp.rtcp_header->ssrc);
+		if (ssrc_idx == -2) {
+			kfree_skb(skb);
+			err = -ENOSYS;
+			goto out;
+		}
+	}
+
+	err = send_proxy_packet_output(skb, g, o, &rtp, ssrc_idx, NULL);
+
+out:
+	target_put(g);
+	return err;
 }
 
 
@@ -3596,6 +3670,10 @@ static inline ssize_t proc_control_read_write(struct file *file, char __user *ub
 
 		case REMG_PACKET:
 			err = stream_packet(t, &msg->u.packet, msg->data, buflen - sizeof(*msg));
+			break;
+
+		case REMG_SEND_RTCP:
+			err = table_send_rtcp(t, &msg->u.send_packet, msg->data, buflen - sizeof(*msg));
 			break;
 
 		default:
@@ -4683,6 +4761,23 @@ static int send_proxy_packet_output(struct sk_buff *skb, struct rtpengine_target
 		pllen = rtp->payload_len;
 		srtp_encrypt(&o->encrypt_rtp, &o->output.encrypt, rtp, pkt_idx);
 		srtp_authenticate(&o->encrypt_rtp, &o->output.encrypt, rtp, pkt_idx);
+		skb_put(skb, rtp->payload_len - pllen);
+	}
+	else if (rtp->rtcp) {
+		unsigned int pllen;
+		uint64_t pkt_idx;
+		unsigned long flags;
+
+		// SRTCP
+		if (ssrc_idx < 0)
+			ssrc_idx = 0;
+
+		spin_lock_irqsave(&o->encrypt_rtcp.lock, flags);
+		pkt_idx = o->output.encrypt.last_rtcp_index[ssrc_idx]++;
+		spin_unlock_irqrestore(&o->encrypt_rtcp.lock, flags);
+		pllen = rtp->payload_len;
+		srtcp_encrypt(&o->encrypt_rtcp, &o->output.encrypt, rtp, pkt_idx);
+		srtcp_authenticate(&o->encrypt_rtcp, &o->output.encrypt, rtp, pkt_idx);
 		skb_put(skb, rtp->payload_len - pllen);
 	}
 

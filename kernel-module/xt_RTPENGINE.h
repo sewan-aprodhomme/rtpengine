@@ -171,6 +171,13 @@ struct rtpengine_noop_info {
 	int				last_cmd;
 };
 
+struct rtpengine_send_packet_info {
+	struct re_address		local;
+	unsigned int			destination_idx;
+	struct re_address		src_addr;
+	struct re_address		dst_addr;
+};
+
 struct rtpengine_message {
 	enum {
 		/* noop_info: */
@@ -198,6 +205,9 @@ struct rtpengine_message {
 		REMG_GET_STATS,
 		REMG_GET_RESET_STATS,
 
+		/* send_packet_info: */
+		REMG_SEND_RTCP,
+
 		__REMG_LAST
 	}				cmd;
 
@@ -209,6 +219,7 @@ struct rtpengine_message {
 		struct rtpengine_stream_info	stream;
 		struct rtpengine_packet_info	packet;
 		struct rtpengine_stats_info	stats;
+		struct rtpengine_send_packet_info send_packet;
 	} u;
 
 	unsigned char			data[];
