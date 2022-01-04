@@ -1082,10 +1082,11 @@ static int __k_srtp_crypt(struct rtpengine_srtp *s, struct crypto_context *c,
 		.cipher		= c->params.crypto_suite->kernel_cipher,
 		.hmac		= c->params.crypto_suite->kernel_hmac,
 		.mki_len	= c->params.mki_len,
-		.auth_tag_len	= c->params.crypto_suite->srtp_auth_tag,
+		.rtp_auth_tag_len= c->params.crypto_suite->srtp_auth_tag,
+		.rtcp_auth_tag_len= c->params.crypto_suite->srtcp_auth_tag,
 	};
 	for (unsigned int i = 0; i < RTPE_NUM_SSRC_TRACKING; i++)
-		s->last_index[i] = ssrc_ctx[i] ? ssrc_ctx[i]->srtp_index : 0;
+		s->last_rtp_index[i] = ssrc_ctx[i] ? ssrc_ctx[i]->srtp_index : 0;
 	if (c->params.mki_len)
 		memcpy(s->mki, c->params.mki, c->params.mki_len);
 	memcpy(s->master_key, c->params.master_key, c->params.crypto_suite->master_key_len);
@@ -1098,7 +1099,7 @@ static int __k_srtp_crypt(struct rtpengine_srtp *s, struct crypto_context *c,
 	if (c->params.session_params.unencrypted_srtp)
 		s->cipher = REC_NULL;
 	if (c->params.session_params.unauthenticated_srtp)
-		s->auth_tag_len = 0;
+		s->rtp_auth_tag_len = 0;
 
 	return 0;
 }

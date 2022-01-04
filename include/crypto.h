@@ -109,7 +109,7 @@ extern __thread GString *crypto_debug_string;
 void crypto_init_main(void);
 
 const struct crypto_suite *crypto_find_suite(const str *);
-int crypto_gen_session_key(struct crypto_context *, str *, unsigned char, int);
+int crypto_gen_session_key(struct crypto_context *, str *, unsigned char, unsigned int);
 void crypto_dump_keys(struct crypto_context *in, struct crypto_context *out);
 char *crypto_params_sdes_dump(const struct crypto_params_sdes *, char **);
 

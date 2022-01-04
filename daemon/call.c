@@ -663,9 +663,9 @@ void call_timer(void *ptr) {
 					if (!ctx)
 						continue;
 					if (sink->crypto.params.crypto_suite
-							&& o->encrypt.last_index[u] - ctx->srtp_index > 0x4000)
+							&& o->encrypt.last_rtp_index[u] - ctx->srtp_index > 0x4000)
 					{
-						ctx->srtp_index = o->encrypt.last_index[u];
+						ctx->srtp_index = o->encrypt.last_rtp_index[u];
 						update = true;
 					}
 				}
@@ -683,11 +683,11 @@ void call_timer(void *ptr) {
 					continue;
 				atomic64_add(&ctx->octets, diff_bytes);
 				atomic64_add(&ctx->packets, diff_packets);
-				atomic64_set(&ctx->last_seq, ke->target.decrypt.last_index[u]);
-				ctx->srtp_index = ke->target.decrypt.last_index[u];
+				atomic64_set(&ctx->last_seq, ke->target.decrypt.last_rtp_index[u]);
+				ctx->srtp_index = ke->target.decrypt.last_rtp_index[u];
 
 				if (sfd->crypto.params.crypto_suite
-						&& ke->target.decrypt.last_index[u]
+						&& ke->target.decrypt.last_rtp_index[u]
 						- ctx->srtp_index > 0x4000)
 					update = true;
 			}
