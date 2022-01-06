@@ -120,6 +120,7 @@ struct rtpengine_target_info {
 					stun:1,
 					rtp:1,
 					rtp_only:1,
+					rtcp:1,
 					do_intercept:1,
 					transcoding:1, // SSRC subst and RTP PT filtering
 					non_forwarding:1, // empty src/dst addr

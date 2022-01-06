@@ -124,7 +124,7 @@ int kernel_setup_table(unsigned int id) {
 
 int kernel_add_stream(struct rtpengine_target_info *mti) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
@@ -143,7 +143,7 @@ int kernel_add_stream(struct rtpengine_target_info *mti) {
 
 int kernel_add_destination(struct rtpengine_destination_info *mdi) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
@@ -163,7 +163,7 @@ int kernel_add_destination(struct rtpengine_destination_info *mdi) {
 
 int kernel_del_stream(const struct re_address *a) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
@@ -185,7 +185,7 @@ GList *kernel_list() {
 	int fd;
 	struct rtpengine_list_entry *buf;
 	GList *li = NULL;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return NULL;
@@ -212,7 +212,7 @@ GList *kernel_list() {
 
 unsigned int kernel_add_call(const char *id) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return UNINIT_IDX;
@@ -229,7 +229,7 @@ unsigned int kernel_add_call(const char *id) {
 
 int kernel_del_call(unsigned int idx) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
@@ -246,7 +246,7 @@ int kernel_del_call(unsigned int idx) {
 
 unsigned int kernel_add_intercept_stream(unsigned int call_idx, const char *id) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return UNINIT_IDX;
@@ -264,7 +264,7 @@ unsigned int kernel_add_intercept_stream(unsigned int call_idx, const char *id) 
 
 int kernel_update_stats(const struct re_address *a, struct rtpengine_stats_info *out) {
 	struct rtpengine_message msg;
-	int ret;
+	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
@@ -280,6 +280,32 @@ int kernel_update_stats(const struct re_address *a, struct rtpengine_stats_info 
 	}
 
 	*out = msg.u.stats;
+
+	return 0;
+}
+
+int kernel_send_rtcp(struct rtpengine_send_packet_info *info, const char *buf, size_t len) {
+	if (!kernel.is_open)
+		return -1;
+
+	size_t total_len = len + sizeof(struct rtpengine_message);
+	struct rtpengine_message *msg = alloca(total_len);
+	ZERO(*msg);
+	msg->cmd = REMG_SEND_RTCP;
+	msg->u.send_packet = *info;
+	memcpy(&msg->data, buf, len);
+
+	ssize_t ret = write(kernel.fd, msg, total_len);
+
+	if (ret != total_len) {
+		if (ret == -1)
+			ilog(LOG_ERR, "Failed to send RTCP via kernel interface: %s", strerror(errno));
+		else
+			ilog(LOG_ERR, "Failed to send RTCP via kernel interface (%zi != %zu)",
+					ret, total_len);
+		return -1;
+	}
+	ilog(LOG_ERR, "XXXXXXXXXXXXXXX sent RTCP via kernel");
 
 	return 0;
 }

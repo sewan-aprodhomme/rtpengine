@@ -1152,12 +1152,6 @@ static const char *kernelize_one(struct rtpengine_target_info *reti, GQueue *out
 	if (sink_handler)
 		sink_handler->kernel_output_idx = -1;
 
-	if (!PS_ISSET(stream, RTP)) {
-		if (PS_ISSET(stream, RTCP) && PS_ISSET(stream, STRICT_SOURCE))
-			non_forwarding = true; // use the kernel's source checking capability
-		else
-			return NULL;
-	}
 	if (MEDIA_ISSET(media, BLACKHOLE))
 		blackhole = true;
 	else if (!sink_handler)
@@ -1202,6 +1196,7 @@ static const char *kernelize_one(struct rtpengine_target_info *reti, GQueue *out
 
 	__re_address_translate_ep(&reti->local, &stream->selected_sfd->socket.local);
 	reti->rtcp_mux = MEDIA_ISSET(media, RTCP_MUX);
+	reti->rtcp = PS_ISSET(stream, RTCP);
 	reti->dtls = MEDIA_ISSET(media, DTLS);
 	reti->stun = media->ice_agent ? 1 : 0;
 	reti->non_forwarding = non_forwarding ? 1 : 0;
@@ -1961,7 +1956,15 @@ int media_packet_encrypt(rewrite_func encrypt_func, struct packet_stream *out, s
 	return ret;
 }
 
-static int __media_packet_encrypt(struct packet_handler_ctx *phc) {
+// return: -1 = error, 0 = ok, 1 = pass to kernel for sending
+static int __media_packet_encrypt(struct packet_handler_ctx *phc, struct sink_handler *sh) {
+	if (phc->rtcp) {
+		// can the kernel handle this for us?
+		if (PS_ISSET(phc->mp.stream, KERNELIZED) && !PS_ISSET(phc->mp.stream, NO_KERNEL_SUPPORT)
+				&& sh->kernel_output_idx >= 0)
+			return 1;
+	}
+
 	int ret = media_packet_encrypt(phc->encrypt_func, phc->out_srtp, &phc->mp);
 	if (ret & 0x02)
 		phc->update = true;
@@ -2456,10 +2459,23 @@ static int stream_packet(struct packet_handler_ctx *phc) {
 				goto err_next;
 		}
 
-		ret = __media_packet_encrypt(phc);
+		ret = __media_packet_encrypt(phc, sh);
 		errno = ENOTTY;
-		if (ret)
+		if (ret == -1)
 			goto err_next;
+
+		if (ret == 1) {
+			for (GList *l = phc->mp.packets_out.head; l; l = l->next) {
+				struct codec_packet *p = l->data;
+				__re_address_translate_ep(&p->kernel_send_info.local,
+						&phc->mp.stream->selected_sfd->socket.local);
+				__re_address_translate_ep(&p->kernel_send_info.src_addr,
+						&sh->sink->selected_sfd->socket.local);
+				__re_address_translate_ep(&p->kernel_send_info.dst_addr,
+						&sh->sink->endpoint);
+				p->kernel_send_info.destination_idx = sh->kernel_output_idx;
+			}
+		}
 
 		mutex_lock(&sh->sink->out_lock);
 

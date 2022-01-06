@@ -1709,20 +1709,31 @@ static int proc_list_show(struct seq_file *f, void *v) {
 	seq_printf(f, "\n");
 
 	proc_list_crypto_print(f, &g->decrypt_rtp, &g->target.decrypt, "decryption");
+
+	seq_printf(f, "    options:");
+	if (g->target.rtp)
+		seq_printf(f, " RTP");
+	if (g->target.rtp_only)
+		seq_printf(f, " RTP-only");
 	if (g->target.rtcp_mux)
-		seq_printf(f, "    option: rtcp-mux\n");
+		seq_printf(f, " RTCP-mux");
+	if (g->target.rtcp)
+		seq_printf(f, " RTCP-only");
 	if (g->target.dtls)
-		seq_printf(f, "    option: dtls\n");
+		seq_printf(f, " DTLS");
 	if (g->target.stun)
-		seq_printf(f, "    option: stun\n");
+		seq_printf(f, " STUN");
 	if (g->target.transcoding)
-		seq_printf(f, "    option: transcoding\n");
+		seq_printf(f, " transcoding");
 	if (g->target.non_forwarding)
-		seq_printf(f, "    option: non forwarding\n");
+		seq_printf(f, " non-forwarding");
 	if (g->target.blackhole)
-		seq_printf(f, "    option: blackhole\n");
+		seq_printf(f, " blackhole");
 	if (g->target.rtp_stats)
-		seq_printf(f, "    option: RTP stats\n");
+		seq_printf(f, " RTP-stats");
+	if (g->target.do_intercept)
+		seq_printf(f, " intercept");
+	seq_printf(f, "\n");
 
 	for (i = 0; i < g->target.num_destinations; i++) {
 		struct rtpengine_output *o = &g->outputs[i];
@@ -4753,7 +4764,7 @@ static int send_proxy_packet_output(struct sk_buff *skb, struct rtpengine_target
 		uint64_t pkt_idx;
 
 		// SSRC substitution
-		if (g->target.transcoding && o->output.ssrc_out && ssrc_idx >= 0)
+		if (g->target.transcoding && likely(o->output.ssrc_out && ssrc_idx >= 0))
 			rtp->rtp_header->ssrc = o->output.ssrc_out[ssrc_idx];
 
 		// SRTP
@@ -4769,7 +4780,7 @@ static int send_proxy_packet_output(struct sk_buff *skb, struct rtpengine_target
 		unsigned long flags;
 
 		// SRTCP
-		if (ssrc_idx < 0)
+		if (unlikely(ssrc_idx < 0))
 			ssrc_idx = 0;
 
 		spin_lock_irqsave(&o->encrypt_rtcp.lock, flags);
@@ -4958,8 +4969,14 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 	// RTP processing
 	rtp.ok = 0;
 	if (g->target.rtp) {
-		if (g->target.rtcp_mux && is_muxed_rtcp(skb))
-			goto out; // pass to userspace
+		if (g->target.rtcp) {
+			if (g->target.rtcp_mux) {
+				if (is_muxed_rtcp(skb))
+					goto out; // pass to userspace
+			}
+			else
+				goto out; // RTCP only
+		}
 
 		parse_rtp(&rtp, skb);
 		if (!rtp.ok) {

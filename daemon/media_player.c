@@ -16,6 +16,7 @@
 #include "log_funcs.h"
 #include "main.h"
 #include "rtcp.h"
+#include "kernel.h"
 
 
 
@@ -201,8 +202,11 @@ static void __send_timer_send_common(struct send_timer *st, struct codec_packet 
 				FMT_M(sockaddr_print_buf(&st->sink->endpoint.address),
 				st->sink->endpoint.port));
 
-	socket_sendto(&st->sink->selected_sfd->socket,
-			cp->s.s, cp->s.len, &st->sink->endpoint);
+	if (cp->kernel_send_info.local.family)
+		kernel_send_rtcp(&cp->kernel_send_info, cp->s.s, cp->s.len);
+	else
+		socket_sendto(&st->sink->selected_sfd->socket,
+				cp->s.s, cp->s.len, &st->sink->endpoint);
 
 	if (cp->ssrc_out && cp->rtp) {
 		atomic64_inc(&cp->ssrc_out->packets);

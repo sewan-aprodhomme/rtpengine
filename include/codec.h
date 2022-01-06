@@ -10,6 +10,7 @@
 #include "aux.h"
 #include "rtplib.h"
 #include "timerthread.h"
+#include "xt_RTPENGINE.h"
 
 
 struct call_media;
@@ -70,6 +71,7 @@ struct codec_packet {
 	unsigned int clockrate;
 	struct ssrc_ctx *ssrc_out;
 	void (*free_func)(void *);
+	struct rtpengine_send_packet_info kernel_send_info;
 };
 
 
