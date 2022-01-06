@@ -3596,18 +3596,30 @@ static inline ssize_t proc_control_read_write(struct file *file, char __user *ub
 	struct inode *inode;
 	uint32_t id;
 	struct rtpengine_table *t;
-	struct rtpengine_message msgbuf;
-	struct rtpengine_message *msg;
+	union {
+		struct rtpengine_message_cmd *msg;
+		struct rtpengine_message_noop *msg_noop;
+		struct rtpengine_message_target *msg_target;
+		struct rtpengine_message_destination *msg_destination;
+		struct rtpengine_message_call *msg_call;
+		struct rtpengine_message_stream *msg_stream;
+		struct rtpengine_message_packet *msg_packet;
+		struct rtpengine_message_stats *msg_stats;
+		struct rtpengine_message_send_packet *msg_send_packet;
+	} u;
+	char stack_buf[800];
+	void *to_free = NULL;
 	int err;
 
-	if (buflen < sizeof(*msg))
+	if (buflen < sizeof(*u.msg))
 		return -EIO;
-	if (buflen == sizeof(*msg))
-		msg = &msgbuf;
+	if (buflen <= sizeof(stack_buf))
+		u.msg = (void *) stack_buf;
 	else { /* > */
-		msg = kmalloc(buflen, GFP_KERNEL);
-		if (!msg)
+		u.msg = kmalloc(buflen, GFP_KERNEL);
+		if (!u.msg)
 			return -ENOMEM;
+		to_free = u.msg;
 	}
 
 	inode = file->f_path.dentry->d_inode;
@@ -3618,77 +3630,108 @@ static inline ssize_t proc_control_read_write(struct file *file, char __user *ub
 		goto out;
 
 	err = -EFAULT;
-	if (copy_from_user(msg, ubuf, buflen))
+	if (copy_from_user(u.msg, ubuf, buflen))
 		goto err;
 
-	err = 0;
+	err = -EIO;
 
-	switch (msg->cmd) {
+	switch (u.msg->cmd) {
 		case REMG_NOOP:
-			if (msg->u.noop.size != sizeof(*msg))
+			if (buflen != sizeof(*u.msg_noop))
+				break;
+			err = 0;
+			if (u.msg_noop->noop.noop_size != sizeof(*u.msg_noop))
 				err = -EMSGSIZE;
-			if (msg->u.noop.last_cmd != __REMG_LAST)
+			if (u.msg_noop->noop.target_size != sizeof(*u.msg_target))
+				err = -EMSGSIZE;
+			if (u.msg_noop->noop.destination_size != sizeof(*u.msg_destination))
+				err = -EMSGSIZE;
+			if (u.msg_noop->noop.last_cmd != __REMG_LAST)
 				err = -ERANGE;
 			break;
 
 		case REMG_ADD_TARGET:
-			err = table_new_target(t, &msg->u.target);
+			if (buflen != sizeof(*u.msg_target))
+				break;
+			err = table_new_target(t, &u.msg_target->target);
 			break;
 
 		case REMG_DEL_TARGET:
-			err = table_del_target(t, &msg->u.target.local);
+			if (buflen != sizeof(*u.msg_target))
+				break;
+			err = table_del_target(t, &u.msg_target->target.local);
 			break;
 
 		case REMG_ADD_DESTINATION:
-			err = table_add_destination(t, &msg->u.destination);
+			if (buflen != sizeof(*u.msg_destination))
+				break;
+			err = table_add_destination(t, &u.msg_destination->destination);
 			break;
 
 		case REMG_GET_STATS:
+			if (buflen != sizeof(*u.msg_stats))
+				break;
 			err = -EINVAL;
 			if (!writeable)
 				goto err;
-			err = table_get_target_stats(t, &msg->u.stats, 0);
+			err = table_get_target_stats(t, &u.msg_stats->stats, 0);
 			break;
 
 		case REMG_GET_RESET_STATS:
+			if (buflen != sizeof(*u.msg_stats))
+				break;
 			err = -EINVAL;
 			if (!writeable)
 				goto err;
-			err = table_get_target_stats(t, &msg->u.stats, 1);
+			err = table_get_target_stats(t, &u.msg_stats->stats, 1);
 			break;
 
 		case REMG_ADD_CALL:
+			if (buflen != sizeof(*u.msg_call))
+				break;
 			err = -EINVAL;
 			if (!writeable)
 				goto err;
-			err = table_new_call(t, &msg->u.call);
+			err = table_new_call(t, &u.msg_call->call);
 			break;
 
 		case REMG_DEL_CALL:
-			err = table_del_call(t, msg->u.call.call_idx);
+			if (buflen != sizeof(*u.msg_call))
+				break;
+			err = table_del_call(t, u.msg_call->call.call_idx);
 			break;
 
 		case REMG_ADD_STREAM:
+			if (buflen != sizeof(*u.msg_stream))
+				break;
 			err = -EINVAL;
 			if (!writeable)
 				goto err;
-			err = table_new_stream(t, &msg->u.stream);
+			err = table_new_stream(t, &u.msg_stream->stream);
 			break;
 
 		case REMG_DEL_STREAM:
-			err = table_del_stream(t, &msg->u.stream);
+			if (buflen != sizeof(*u.msg_stream))
+				break;
+			err = table_del_stream(t, &u.msg_stream->stream);
 			break;
 
 		case REMG_PACKET:
-			err = stream_packet(t, &msg->u.packet, msg->data, buflen - sizeof(*msg));
+			if (buflen < sizeof(*u.msg_packet))
+				break;
+			err = stream_packet(t, &u.msg_packet->packet, u.msg_packet->data,
+					buflen - sizeof(*u.msg_packet));
 			break;
 
 		case REMG_SEND_RTCP:
-			err = table_send_rtcp(t, &msg->u.send_packet, msg->data, buflen - sizeof(*msg));
+			if (buflen < sizeof(*u.msg_send_packet))
+				break;
+			err = table_send_rtcp(t, &u.msg_send_packet->send_packet, u.msg_send_packet->data,
+					buflen - sizeof(*u.msg_send_packet));
 			break;
 
 		default:
-			printk(KERN_WARNING "xt_RTPENGINE unimplemented op %u\n", msg->cmd);
+			printk(KERN_WARNING "xt_RTPENGINE unimplemented op %u\n", u.msg->cmd);
 			err = -EINVAL;
 			break;
 	}
@@ -3700,20 +3743,20 @@ static inline ssize_t proc_control_read_write(struct file *file, char __user *ub
 
 	if (writeable) {
 		err = -EFAULT;
-		if (copy_to_user(ubuf, msg, sizeof(*msg)))
+		if (copy_to_user(ubuf, u.msg, buflen))
 			goto out;
 	}
 
-	if (msg != &msgbuf)
-		kfree(msg);
+	if (to_free)
+		kfree(to_free);
 
 	return buflen;
 
 err:
 	table_put(t);
 out:
-	if (msg != &msgbuf)
-		kfree(msg);
+	if (to_free)
+		kfree(to_free);
 	return err;
 }
 static ssize_t proc_control_write(struct file *file, const char __user *ubuf, size_t buflen, loff_t *off) {

@@ -168,7 +168,9 @@ struct rtpengine_stats_info {
 };
 
 struct rtpengine_noop_info {
-	size_t				size;
+	size_t				noop_size;
+	size_t				target_size;
+	size_t				destination_size;
 	int				last_cmd;
 };
 
@@ -179,7 +181,7 @@ struct rtpengine_send_packet_info {
 	struct re_address		dst_addr;
 };
 
-struct rtpengine_message {
+struct rtpengine_message_cmd {
 	enum {
 		/* noop_info: */
 		REMG_NOOP = 1,
@@ -212,17 +214,41 @@ struct rtpengine_message {
 		__REMG_LAST
 	}				cmd;
 
-	union {
-		struct rtpengine_noop_info	noop;
-		struct rtpengine_target_info	target;
-		struct rtpengine_destination_info destination;
-		struct rtpengine_call_info	call;
-		struct rtpengine_stream_info	stream;
-		struct rtpengine_packet_info	packet;
-		struct rtpengine_stats_info	stats;
-		struct rtpengine_send_packet_info send_packet;
-	} u;
+	char rest[];
+};
 
+struct rtpengine_message_noop {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_noop_info	noop;
+};
+struct rtpengine_message_target {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_target_info	target;
+};
+struct rtpengine_message_destination {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_destination_info destination;
+};
+struct rtpengine_message_call {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_call_info	call;
+};
+struct rtpengine_message_stream {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_stream_info	stream;
+};
+struct rtpengine_message_packet {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_packet_info	packet;
+	unsigned char			data[];
+};
+struct rtpengine_message_stats {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_stats_info	stats;
+};
+struct rtpengine_message_send_packet {
+	struct rtpengine_message_cmd	cmd;
+	struct rtpengine_send_packet_info send_packet;
 	unsigned char			data[];
 };
 

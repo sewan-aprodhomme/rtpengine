@@ -856,14 +856,14 @@ static void dump_packet_proc(struct media_packet *mp, const str *s) {
 	if (stream->recording.u.proc.stream_idx == UNINIT_IDX)
 		return;
 
-	struct rtpengine_message *remsg;
+	struct rtpengine_message_packet *remsg;
 	unsigned char pkt[sizeof(*remsg) + s->len + MAX_PACKET_HEADER_LEN];
 	remsg = (void *) pkt;
 
 	ZERO(*remsg);
-	remsg->cmd = REMG_PACKET;
+	remsg->cmd.cmd = REMG_PACKET;
 	//remsg->u.packet.call_idx = stream->call->recording->u.proc.call_idx; // unused
-	remsg->u.packet.stream_idx = stream->recording.u.proc.stream_idx;
+	remsg->packet.stream_idx = stream->recording.u.proc.stream_idx;
 
 	unsigned int pkt_len = fake_ip_header(remsg->data, mp, s);
 	pkt_len += sizeof(*remsg);

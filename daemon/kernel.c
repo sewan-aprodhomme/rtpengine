@@ -66,7 +66,7 @@ static int kernel_open_table(unsigned int id) {
 	char str[64];
 	int saved_errno;
 	int fd;
-	struct rtpengine_message msg;
+	struct rtpengine_message_noop msg;
 	int i;
 
 	sprintf(str, PREFIX "/%u/control", id);
@@ -75,9 +75,11 @@ static int kernel_open_table(unsigned int id) {
 		return -1;
 
 	ZERO(msg);
-	msg.cmd = REMG_NOOP;
-	msg.u.noop.size = sizeof(msg);
-	msg.u.noop.last_cmd = __REMG_LAST;
+	msg.cmd.cmd = REMG_NOOP;
+	msg.noop.noop_size = sizeof(msg);
+	msg.noop.target_size = sizeof(struct rtpengine_message_target);
+	msg.noop.destination_size = sizeof(struct rtpengine_message_destination);
+	msg.noop.last_cmd = __REMG_LAST;
 	i = write(fd, &msg, sizeof(msg));
 	if (i <= 0)
 		goto fail;
@@ -123,14 +125,14 @@ int kernel_setup_table(unsigned int id) {
 
 
 int kernel_add_stream(struct rtpengine_target_info *mti) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_target msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
 
-	msg.cmd = REMG_ADD_TARGET;
-	msg.u.target = *mti;
+	msg.cmd.cmd = REMG_ADD_TARGET;
+	msg.target = *mti;
 
 	// coverity[uninit_use_in_call : FALSE]
 	ret = write(kernel.fd, &msg, sizeof(msg));
@@ -142,14 +144,14 @@ int kernel_add_stream(struct rtpengine_target_info *mti) {
 }
 
 int kernel_add_destination(struct rtpengine_destination_info *mdi) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_destination msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
 
-	msg.cmd = REMG_ADD_DESTINATION;
-	msg.u.destination = *mdi;
+	msg.cmd.cmd = REMG_ADD_DESTINATION;
+	msg.destination = *mdi;
 
 	// coverity[uninit_use_in_call : FALSE]
 	ret = write(kernel.fd, &msg, sizeof(msg));
@@ -162,15 +164,15 @@ int kernel_add_destination(struct rtpengine_destination_info *mdi) {
 
 
 int kernel_del_stream(const struct re_address *a) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_target msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
 
 	ZERO(msg);
-	msg.cmd = REMG_DEL_TARGET;
-	msg.u.target.local = *a;
+	msg.cmd.cmd = REMG_DEL_TARGET;
+	msg.target.local = *a;
 
 	ret = write(kernel.fd, &msg, sizeof(msg));
 	if (ret > 0)
@@ -211,32 +213,32 @@ GList *kernel_list() {
 }
 
 unsigned int kernel_add_call(const char *id) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_call msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return UNINIT_IDX;
 
 	ZERO(msg);
-	msg.cmd = REMG_ADD_CALL;
-	snprintf(msg.u.call.call_id, sizeof(msg.u.call.call_id), "%s", id);
+	msg.cmd.cmd = REMG_ADD_CALL;
+	snprintf(msg.call.call_id, sizeof(msg.call.call_id), "%s", id);
 
 	ret = read(kernel.fd, &msg, sizeof(msg));
 	if (ret != sizeof(msg))
 		return UNINIT_IDX;
-	return msg.u.call.call_idx;
+	return msg.call.call_idx;
 }
 
 int kernel_del_call(unsigned int idx) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_call msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
 
 	ZERO(msg);
-	msg.cmd = REMG_DEL_CALL;
-	msg.u.call.call_idx = idx;
+	msg.cmd.cmd = REMG_DEL_CALL;
+	msg.call.call_idx = idx;
 
 	ret = write(kernel.fd, &msg, sizeof(msg));
 	if (ret != sizeof(msg))
@@ -245,33 +247,33 @@ int kernel_del_call(unsigned int idx) {
 }
 
 unsigned int kernel_add_intercept_stream(unsigned int call_idx, const char *id) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_stream msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return UNINIT_IDX;
 
 	ZERO(msg);
-	msg.cmd = REMG_ADD_STREAM;
-	msg.u.stream.call_idx = call_idx;
-	snprintf(msg.u.stream.stream_name, sizeof(msg.u.stream.stream_name), "%s", id);
+	msg.cmd.cmd = REMG_ADD_STREAM;
+	msg.stream.call_idx = call_idx;
+	snprintf(msg.stream.stream_name, sizeof(msg.stream.stream_name), "%s", id);
 
 	ret = read(kernel.fd, &msg, sizeof(msg));
 	if (ret != sizeof(msg))
 		return UNINIT_IDX;
-	return msg.u.stream.stream_idx;
+	return msg.stream.stream_idx;
 }
 
 int kernel_update_stats(const struct re_address *a, struct rtpengine_stats_info *out) {
-	struct rtpengine_message msg;
+	struct rtpengine_message_stats msg;
 	ssize_t ret;
 
 	if (!kernel.is_open)
 		return -1;
 
 	ZERO(msg);
-	msg.cmd = REMG_GET_RESET_STATS;
-	msg.u.stats.local = *a;
+	msg.cmd.cmd = REMG_GET_RESET_STATS;
+	msg.stats.local = *a;
 
 	ret = read(kernel.fd, &msg, sizeof(msg));
 	if (ret <= 0) {
@@ -279,7 +281,7 @@ int kernel_update_stats(const struct re_address *a, struct rtpengine_stats_info 
 		return -1;
 	}
 
-	*out = msg.u.stats;
+	*out = msg.stats;
 
 	return 0;
 }
@@ -288,11 +290,11 @@ int kernel_send_rtcp(struct rtpengine_send_packet_info *info, const char *buf, s
 	if (!kernel.is_open)
 		return -1;
 
-	size_t total_len = len + sizeof(struct rtpengine_message);
-	struct rtpengine_message *msg = alloca(total_len);
+	size_t total_len = len + sizeof(struct rtpengine_message_send_packet);
+	struct rtpengine_message_send_packet *msg = alloca(total_len);
 	ZERO(*msg);
-	msg->cmd = REMG_SEND_RTCP;
-	msg->u.send_packet = *info;
+	msg->cmd.cmd = REMG_SEND_RTCP;
+	msg->send_packet = *info;
 	memcpy(&msg->data, buf, len);
 
 	ssize_t ret = write(kernel.fd, msg, total_len);
