@@ -326,6 +326,7 @@ static ssize_t __ip_recvfrom_ts(socket_t *s, void *buf, size_t len, endpoint_t *
 		for (cm = CMSG_FIRSTHDR(&msg); cm; cm = CMSG_NXTHDR(&msg, cm)) {
 			if (cm->cmsg_level == SOL_SOCKET && cm->cmsg_type == SO_TIMESTAMP) {
 				*tv = *((struct timeval *) CMSG_DATA(cm));
+				ilog(LOG_ERR, "XXXXXXXXXXXX receive TS %lu %lu", tv->tv_sec, tv->tv_usec);
 				tv = NULL;
 				break;
 			}

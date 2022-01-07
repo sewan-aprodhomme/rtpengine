@@ -121,6 +121,7 @@ struct rtpengine_target_info {
 					rtp:1,
 					rtp_only:1,
 					rtcp:1,
+					rtcp_fw:1,
 					rtcp_fb_fw:1,
 					do_intercept:1,
 					transcoding:1, // SSRC subst and RTP PT filtering

@@ -5025,7 +5025,8 @@ static void rtp_stats(struct rtpengine_target *g, struct rtp_parsed *rtp, s64 ar
 }
 
 
-static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, struct re_address *src,
+static unsigned int rtpengine46(struct sk_buff *skb, struct sk_buff *oskb,
+		struct rtpengine_table *t, struct re_address *src,
 		struct re_address *dst, uint8_t in_tos, const struct xt_action_param *par)
 {
 	struct udphdr *uh;
@@ -5033,6 +5034,7 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 	struct sk_buff *skb2;
 	int err;
 	int error_nf_action = XT_CONTINUE;
+	int nf_action = NF_DROP;
 	int rtp_pt_idx = -2;
 	int ssrc_idx = -1;
 	unsigned int datalen;
@@ -5130,6 +5132,8 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 		else {
 			if (g->target.rtcp_fb_fw && is_rtcp_fb_packet(skb))
 				; // forward and then drop
+			else if (g->target.rtcp_fw)
+				is_rtcp = 2; // forward, mark, and pass to userspace
 			else
 				goto out; // just pass to userspace
 
@@ -5188,6 +5192,10 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 				goto out_error;
 		}
 		skb_trim(skb, rtp.header_len + rtp.payload_len);
+		if (is_rtcp == 2) {
+			oskb->tstamp = -1;
+			nf_action = XT_CONTINUE;
+		}
 	}
 
 	if (g->target.do_intercept) {
@@ -5290,7 +5298,7 @@ static unsigned int rtpengine46(struct sk_buff *skb, struct rtpengine_table *t, 
 	target_put(g);
 	table_put(t);
 
-	return NF_DROP;
+	return nf_action;
 
 out_error:
 	log_err("x_tables action failed: %s", errstr);
@@ -5336,7 +5344,7 @@ static unsigned int rtpengine4(struct sk_buff *oskb, const struct xt_action_para
 	dst.family = AF_INET;
 	dst.u.ipv4 = ih->daddr;
 
-	return rtpengine46(skb, t, &src, &dst, (uint8_t)ih->tos, par);
+	return rtpengine46(skb, oskb, t, &src, &dst, (uint8_t)ih->tos, par);
 
 skip2:
 	kfree_skb(skb);
@@ -5378,7 +5386,7 @@ static unsigned int rtpengine6(struct sk_buff *oskb, const struct xt_action_para
 	dst.family = AF_INET6;
 	memcpy(&dst.u.ipv6, &ih->daddr, sizeof(dst.u.ipv6));
 
-	return rtpengine46(skb, t, &src, &dst, ipv6_get_dsfield(ih), par);
+	return rtpengine46(skb, oskb, t, &src, &dst, ipv6_get_dsfield(ih), par);
 
 skip2:
 	kfree_skb(skb);
