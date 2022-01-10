@@ -32,6 +32,14 @@ else
 	fi
 fi
 
+if [ "$1" = configure ]; then
+	if [ -z "`id -u rtpengine 2> /dev/null`" ]; then
+		adduser --system --home /nonexistant --gecos rtpengine \
+			--no-create-home --disabled-password \
+			--group --quiet rtpengine || true
+	fi
+fi
+
 #DEBHELPER#
 
 exit 0
