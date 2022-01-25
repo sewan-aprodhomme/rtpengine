@@ -920,6 +920,10 @@ int websocket_init(void) {
 			(!rtpe_config.https_ifs || !*rtpe_config.https_ifs))
 		return 0;
 
+	struct sockaddr_storage sa;
+	int ret = lws_interface_to_sa(1, "::1", (void *) &sa, sizeof(sa));
+	bool have_lws_ipv6 = (ret == 0);
+
 	const char *err = NULL;
 
 	lws_set_log_level(LLL_ERR | LLL_WARN, websocket_log);
@@ -949,6 +953,8 @@ int websocket_init(void) {
 			endpoint_t *ep = &eps[i];
 			if (!ep->port)
 				continue;
+			if (ep->address.family->af == AF_INET6 && !have_lws_ipv6)
+				continue;
 			struct lws_context_creation_info *vhost = malloc(sizeof(*vhost));
 			g_queue_push_tail(&websocket_vhost_configs, vhost);
 
@@ -965,7 +971,7 @@ int websocket_init(void) {
 				goto err;
 			success = true;
 		}
-		err = "Failed to create any LWS vhost from given config";
+		err = "Failed to create any LWS vhost from given config (perhaps LWS IPv6 support is unavailable?)";
 		if (!success)
 			goto err;
 	}
@@ -987,6 +993,8 @@ int websocket_init(void) {
 			endpoint_t *ep = &eps[i];
 			if (!ep->port)
 				continue;
+			if (ep->address.family->af == AF_INET6 && !have_lws_ipv6)
+				continue;
 			struct lws_context_creation_info *vhost = malloc(sizeof(*vhost));
 			g_queue_push_tail(&websocket_vhost_configs, vhost);
 
@@ -1007,7 +1015,7 @@ int websocket_init(void) {
 				goto err;
 			success = true;
 		}
-		err = "Failed to create any LWS vhost from given config";
+		err = "Failed to create any LWS vhost from given config (perhaps LWS IPv6 support is unavailable?)";
 		if (!success)
 			goto err;
 	}
