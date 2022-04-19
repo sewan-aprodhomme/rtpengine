@@ -4,6 +4,12 @@
 #include "auxlib.h"
 
 
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+EVP_MAC *rtpe_evp_hmac;
+#endif
+
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 static mutex_t *openssl_locks;
 
@@ -43,5 +49,10 @@ void rtpe_ssl_init(void) {
 	SSL_library_init();
 	SSL_load_error_strings();
 	make_OpenSSL_thread_safe();
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	rtpe_evp_hmac = EVP_MAC_fetch(NULL, "hmac", NULL);
+	assert(rtpe_evp_hmac != NULL);
 #endif
 }

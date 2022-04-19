@@ -13,6 +13,7 @@
 #include "aux.h"
 #include "log.h"
 #include "ice.h"
+#include "ssllib.h"
 
 
 
@@ -339,6 +340,25 @@ static void fingerprint(struct msghdr *mh, struct fingerprint *fp) {
 
 static void __integrity(struct iovec *iov, int iov_cnt, str *pwd, char *digest) {
 	int i;
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	EVP_MAC_CTX *ctx;
+
+	ctx = EVP_MAC_CTX_new(rtpe_evp_hmac);
+	static const OSSL_PARAM params[2] = {
+		OSSL_PARAM_utf8_string("digest", "sha-1", 5),
+		OSSL_PARAM_END,
+	};
+	EVP_MAC_CTX_set_params(ctx, params);
+	EVP_MAC_init(ctx, (unsigned char *) pwd->s, pwd->len, NULL);
+
+	for (i = 0; i < iov_cnt; i++)
+		EVP_MAC_update(ctx, iov[i].iov_base, iov[i].iov_len);
+
+	size_t outsize = 20;
+	EVP_MAC_final(ctx, (unsigned char *) digest, &outsize, outsize);
+	EVP_MAC_CTX_free(ctx);
+#else // <3.0
 	HMAC_CTX *ctx;
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
@@ -359,6 +379,7 @@ static void __integrity(struct iovec *iov, int iov_cnt, str *pwd, char *digest) 
 	HMAC_CTX_free(ctx);
 #else
 	HMAC_CTX_cleanup(ctx);
+#endif
 #endif
 }
 
