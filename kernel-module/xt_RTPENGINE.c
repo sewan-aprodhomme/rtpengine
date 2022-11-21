@@ -4567,10 +4567,10 @@ not_stun:
 src_check_ok:
 	if (g->target.dtls && is_dtls(skb))
 		goto skip1;
-	if (g->target.non_forwarding) {
+	if (g->target.non_forwarding && !g->target.do_intercept) {
 		if (g->target.blackhole)
 			error_nf_action = NF_DROP;
-		goto skip1;
+		goto do_stats;
 	}
 
 	rtp.ok = 0;
@@ -4710,6 +4710,7 @@ no_intercept:
 		}
 	}
 
+do_stats:
 	if (atomic64_read(&g->stats_in.packets)==0)
 		atomic_set(&g->stats_in.tos,in_tos);
 
