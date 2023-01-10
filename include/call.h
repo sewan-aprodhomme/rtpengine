@@ -290,6 +290,7 @@ struct stream_params {
 	int			ptime;
 	str			media_id;
 	struct t38_options	t38_options;
+	str			tls_id;
 };
 
 struct endpoint_map {
@@ -409,6 +410,7 @@ struct call_media {
 	GQueue			sdes_in, sdes_out;
 	struct dtls_fingerprint fingerprint;			/* as received */
 	const struct dtls_hash_func *fp_hash_func;		/* outgoing */
+	str			tls_id;
 
 	GQueue			streams;			/* normally RTP + RTCP */
 	GQueue			endpoint_maps;
