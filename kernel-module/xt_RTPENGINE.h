@@ -201,6 +201,7 @@ struct rtpengine_message {
 		/* stats_info: */
 		REMG_GET_STATS,
 		REMG_GET_RESET_STATS,
+		REMG_DEL_TARGET_STATS,
 
 		__REMG_LAST
 	}				cmd;

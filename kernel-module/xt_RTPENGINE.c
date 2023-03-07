@@ -1923,6 +1923,23 @@ static int table_del_target(struct rtpengine_table *t, const struct re_address *
 
 
 
+// removes target from table and returns the stats before releasing the target
+static int table_del_target_stats(struct rtpengine_table *t, struct rtpengine_stats_info *i) {
+	struct rtpengine_target *g = table_steal_target(t, &i->local);
+
+	if (IS_ERR(g))
+		return PTR_ERR(g);
+
+	target_retrieve_stats(g, i, 0);
+
+	target_put(g);
+
+	return 0;
+}
+
+
+
+
 static int is_valid_address(const struct re_address *rea) {
 	switch (rea->family) {
 		case AF_INET:
@@ -3543,6 +3560,13 @@ static inline ssize_t proc_control_read_write(struct file *file, char __user *ub
 
 		case REMG_DEL_TARGET:
 			err = table_del_target(t, &msg->u.target.local);
+			break;
+
+		case REMG_DEL_TARGET_STATS:
+			err = -EINVAL;
+			if (!writeable)
+				goto err;
+			err = table_del_target_stats(t, &msg->u.stats);
 			break;
 
 		case REMG_ADD_DESTINATION:
