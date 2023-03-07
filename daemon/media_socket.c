@@ -1769,9 +1769,10 @@ void __unkernelize(struct packet_stream *p) {
 	if (kernel.is_open && !PS_ISSET(p, NO_KERNEL_SUPPORT)) {
 		ilog(LOG_INFO, "Removing media stream from kernel: local %s",
 				endpoint_print_buf(&p->selected_sfd->socket.local));
-		__stream_update_stats(p, true);
+		struct rtpengine_stats_info stats_info;
 		__re_address_translate_ep(&rea, &p->selected_sfd->socket.local);
-		kernel_del_stream(&rea);
+		if (kernel_del_stream_stats(&rea, &stats_info) == 0)
+			__stream_consume_stats(p, &stats_info);
 	}
 
 	PS_CLEAR(p, KERNELIZED);

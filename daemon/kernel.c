@@ -161,7 +161,7 @@ int kernel_add_destination(struct rtpengine_destination_info *mdi) {
 }
 
 
-int kernel_del_stream(const struct re_address *a) {
+int kernel_del_stream_stats(const struct re_address *a, struct rtpengine_stats_info *out) {
 	struct rtpengine_message msg;
 	int ret;
 
@@ -169,12 +169,14 @@ int kernel_del_stream(const struct re_address *a) {
 		return -1;
 
 	ZERO(msg);
-	msg.cmd = REMG_DEL_TARGET;
-	msg.u.target.local = *a;
+	msg.cmd = REMG_DEL_TARGET_STATS;
+	msg.u.stats.local = *a;
 
-	ret = write(kernel.fd, &msg, sizeof(msg));
-	if (ret > 0)
+	ret = read(kernel.fd, &msg, sizeof(msg));
+	if (ret > 0) {
+		*out = msg.u.stats;
 		return 0;
+	}
 
 	ilog(LOG_ERROR, "Failed to delete relay stream from kernel: %s", strerror(errno));
 	return -1;
