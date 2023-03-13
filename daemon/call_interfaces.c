@@ -3355,6 +3355,9 @@ const char *call_play_dtmf_ng(bencode_item_t *input, bencode_item_t *output) {
 		// XXX fall back to generating a secondary stream
 
 found:
+		monologue->dtmf_injection_active = 1;
+		dialogue_unkernelize(monologue);
+
 		for (GList *k = monologue->subscribers.head; k; k = k->next) {
 			struct call_subscription *cs = k->data;
 			struct call_monologue *dialogue = cs->monologue;
