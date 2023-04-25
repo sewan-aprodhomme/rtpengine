@@ -12,6 +12,7 @@ Currently the only supported platform is GNU/Linux.
 
 .. toctree::
    :maxdepth: 4
+   :titlesonly:
 
    overview
    rtpengine
