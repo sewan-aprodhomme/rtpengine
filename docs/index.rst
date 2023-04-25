@@ -15,7 +15,7 @@ Currently the only supported platform is GNU/Linux.
    :titlesonly:
 
    overview
-   rtpengine
+   man rtpengine <rtpengine>
    architecture
    tests
    troubleshooting
